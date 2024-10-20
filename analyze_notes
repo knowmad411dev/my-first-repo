@@ -1,0 +1,202 @@
+import os
+import spacy
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.cluster import KMeans
+import networkx as nx
+import matplotlib.pyplot as plt
+
+notes_path = "/Users/toddk/Documents/MyBrain/"  # Ensure this path is correct
+
+"""
+Loads notes from the specified directory.
+    
+Args:
+path (str): Path to the directory containing the notes.
+    
+Returns:
+dict: Dictionary of filenames and their content.
+"""
+
+
+def load_notes(path):
+    notes = {}
+    try:
+        for filename in os.listdir(path):
+            if filename.endswith(".md"):
+                try:
+                    with open(os.path.join(path, filename), "r", encoding="utf-8") as f:
+                        notes[filename] = f.read()
+                except Exception as e:
+                    print(f"Error reading {filename}: {e}")
+    except FileNotFoundError:
+        print(f"Directory not found: {path}")
+    return notes
+
+
+# 1. Cosine Similarity Analysis
+def cosine_similarity_analysis(notes):
+    """
+    Performs cosine similarity analysis on notes.
+
+    Args:
+        notes (dict): Dictionary of note content.
+
+    Returns:
+        ndarray: Cosine similarity matrix.
+    """
+    if not notes:
+        print("No notes available for cosine similarity analysis.")
+        return []
+    vectorizer = TfidfVectorizer(stop_words="english")
+    vectors = vectorizer.fit_transform(notes.values())
+    similarity_matrix = cosine_similarity(vectors)
+    return similarity_matrix
+
+
+# 2. Topic Modeling with LDA
+def topic_modeling(notes, num_topics=5):
+    """
+    Performs topic modeling using LDA on notes.
+
+    Args:
+        notes (dict): Dictionary of note content.
+        num_topics (int): Number of topics to extract.
+
+    Returns:
+        dict: Dictionary of topics and associated terms.
+    """
+    if not notes:
+        print("No notes available for topic modeling.")
+        return {}
+    vectorizer = TfidfVectorizer(stop_words="english")
+    vectors = vectorizer.fit_transform(notes.values())
+    lda = LatentDirichletAllocation(n_components=num_topics, random_state=42)
+    lda.fit(vectors)
+    topics = {}
+    for idx, topic in enumerate(lda.components_):
+        terms = [vectorizer.get_feature_names_out()[i] for i in topic.argsort()[-10:]]
+        topics[f"Topic {idx+1}"] = terms
+    return topics
+
+
+# 3. Clustering Notes using KMeans
+def cluster_notes(notes, num_clusters=3):
+    """
+    Clusters notes using KMeans clustering.
+
+    Args:
+        notes (dict): Dictionary of note content.
+        num_clusters (int): Number of clusters.
+
+    Returns:
+        dict: Clusters and the associated notes.
+    """
+    if not notes:
+        print("No notes available for clustering.")
+        return {}
+    vectorizer = TfidfVectorizer(stop_words="english")
+    vectors = vectorizer.fit_transform(notes.values())
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+    labels = kmeans.fit_predict(vectors)
+
+    clusters = {}
+    for i, label in enumerate(labels):
+        note_name = list(notes.keys())[i]
+        clusters.setdefault(label, []).append(note_name)
+    return clusters
+
+
+# 4. Named Entity Recognition (NER) using spaCy
+def named_entity_recognition(notes):
+    """
+    Performs named entity recognition (NER) on notes using spaCy.
+
+    Args:
+        notes (dict): Dictionary of note content.
+
+    Returns:
+        dict: Recognized entities with labels and text.
+    """
+    if not notes:
+        print("No notes available for named entity recognition.")
+        return {}
+    nlp = spacy.load("en_core_web_sm")
+    entities = {}
+
+    for filename, content in notes.items():
+        doc = nlp(content)
+        for ent in doc.ents:
+            entities.setdefault(ent.label_, []).append((filename, ent.text))
+    return entities
+
+
+# 5. Graph Visualization of Note Relationships
+def visualize_note_graph(similarity_matrix, notes):
+    """
+    Visualizes note relationships using a graph.
+
+    Args:
+        similarity_matrix (ndarray): Cosine similarity matrix.
+        notes (dict): Dictionary of note content.
+    """
+    if not similarity_matrix:
+        print("No similarity data available for graph visualization.")
+        return
+    G = nx.Graph()
+    note_names = list(notes.keys())
+
+    for i in range(len(note_names)):
+        for j in range(i + 1, len(note_names)):
+            if similarity_matrix[i, j] > 0.2:  # Adjust threshold as needed
+                G.add_edge(note_names[i], note_names[j], weight=similarity_matrix[i, j])
+
+    plt.figure(figsize=(10, 8))
+    pos = nx.spring_layout(G, seed=42)
+    nx.draw_networkx(
+        G, pos, with_labels=True, node_size=3000, node_color="skyblue", font_size=10
+    )
+    plt.title("Graph of Note Relationships")
+    plt.show()
+
+
+# Run the analysis
+def main():
+    """
+    Executes the full analysis on the notes, including similarity analysis,
+    topic modeling, clustering, named entity recognition, and graph visualization.
+    """
+    notes = load_notes(notes_path)
+
+    if notes:
+        print("\n1. Cosine Similarity Scores:")
+        similarity_matrix = cosine_similarity_analysis(notes)
+        for i, note1 in enumerate(notes):
+            for j, note2 in enumerate(notes):
+                if i < j:
+                    print(f"{note1} <--> {note2}: {similarity_matrix[i][j]:.2f}")
+
+        print("\n2. Topic Modeling Results:")
+        topics = topic_modeling(notes)
+        for topic, terms in topics.items():
+            print(f"{topic}: {', '.join(terms)}")
+
+        print("\n3. Note Clusters:")
+        clusters = cluster_notes(notes)
+        for cluster, note_list in clusters.items():
+            print(f"Cluster {cluster}: {', '.join(note_list)}")
+
+        print("\n4. Named Entities Recognized:")
+        entities = named_entity_recognition(notes)
+        for entity_type, entity_list in entities.items():
+            print(f"{entity_type}: {entity_list}")
+
+        print("\n5. Visualizing Note Graph...")
+        visualize_note_graph(similarity_matrix, notes)
+    else:
+        print("No notes were loaded. Please check the directory path.")
+
+
+if __name__ == "__main__":
+    main()
